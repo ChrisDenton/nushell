@@ -20,12 +20,12 @@ use std::{
 // Note: When adding new constants to $nu, please update the doc at https://nushell.sh/book/special_variables.html
 // or at least add a TODO/reminder issue in nushell.github.io so we don't lose track of it.
 pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Value {
-    fn canonicalize_path(engine_state: &EngineState, path: &Path) -> PathBuf {
+    fn absolute_path(engine_state: &EngineState, path: &Path) -> PathBuf {
         #[allow(deprecated)]
         let cwd = engine_state.current_work_dir();
 
         if path.exists() {
-            match nu_path::canonicalize_with(path, cwd) {
+            match nu_path::absolute_with(path, cwd) {
                 Ok(canon_path) => canon_path,
                 Err(_) => path.to_owned(),
             }
@@ -37,7 +37,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     let mut record = Record::new();
 
     let config_path = match nu_path::nu_config_dir() {
-        Some(path) => Ok(canonicalize_path(engine_state, path.as_ref())),
+        Some(path) => Ok(absolute_path(engine_state, path.as_ref())),
         None => Err(Value::error(ShellError::ConfigDirNotFound { span }, span)),
     };
 
@@ -52,14 +52,14 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     record.push(
         "config-path",
         if let Some(path) = engine_state.get_config_path("config-path") {
-            let canon_config_path = canonicalize_path(engine_state, path);
+            let canon_config_path = absolute_path(engine_state, path);
             Value::string(canon_config_path.to_string_lossy(), span)
         } else {
             config_path.clone().map_or_else(
                 |e| e,
                 |mut path| {
                     path.push("config.nu");
-                    let canon_config_path = canonicalize_path(engine_state, &path);
+                    let canon_config_path = absolute_path(engine_state, &path);
                     Value::string(canon_config_path.to_string_lossy(), span)
                 },
             )
@@ -69,14 +69,14 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     record.push(
         "env-path",
         if let Some(path) = engine_state.get_config_path("env-path") {
-            let canon_env_path = canonicalize_path(engine_state, path);
+            let canon_env_path = absolute_path(engine_state, path);
             Value::string(canon_env_path.to_string_lossy(), span)
         } else {
             config_path.clone().map_or_else(
                 |e| e,
                 |mut path| {
                     path.push("env.nu");
-                    let canon_env_path = canonicalize_path(engine_state, &path);
+                    let canon_env_path = absolute_path(engine_state, &path);
                     Value::string(canon_env_path.to_string_lossy(), span)
                 },
             )
@@ -96,7 +96,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
                         path.push("history.txt");
                     }
                 }
-                let canon_hist_path = canonicalize_path(engine_state, &path);
+                let canon_hist_path = absolute_path(engine_state, &path);
                 Value::string(canon_hist_path.to_string_lossy(), span)
             },
         ),
@@ -108,7 +108,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
             |e| e,
             |mut path| {
                 path.push("login.nu");
-                let canon_login_path = canonicalize_path(engine_state, &path);
+                let canon_login_path = absolute_path(engine_state, &path);
                 Value::string(canon_login_path.to_string_lossy(), span)
             },
         ),
@@ -119,7 +119,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
         record.push(
             "plugin-path",
             if let Some(path) = &engine_state.plugin_path {
-                let canon_plugin_path = canonicalize_path(engine_state, path);
+                let canon_plugin_path = absolute_path(engine_state, path);
                 Value::string(canon_plugin_path.to_string_lossy(), span)
             } else {
                 // If there are no signatures, we should still populate the plugin path
@@ -127,7 +127,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
                     |e| e,
                     |mut path| {
                         path.push("plugin.msgpackz");
-                        let canonical_plugin_path = canonicalize_path(engine_state, &path);
+                        let canonical_plugin_path = absolute_path(engine_state, &path);
                         Value::string(canonical_plugin_path.to_string_lossy(), span)
                     },
                 )
@@ -138,7 +138,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     record.push(
         "home-dir",
         if let Some(path) = nu_path::home_dir() {
-            let canon_home_path = canonicalize_path(engine_state, path.as_ref());
+            let canon_home_path = absolute_path(engine_state, path.as_ref());
             Value::string(canon_home_path.to_string_lossy(), span)
         } else {
             Value::error(
@@ -157,7 +157,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     record.push(
         "data-dir",
         if let Some(path) = nu_path::data_dir() {
-            let mut canon_data_path = canonicalize_path(engine_state, path.as_ref());
+            let mut canon_data_path = absolute_path(engine_state, path.as_ref());
             canon_data_path.push("nushell");
             Value::string(canon_data_path.to_string_lossy(), span)
         } else {
@@ -177,7 +177,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     record.push(
         "cache-dir",
         if let Some(path) = nu_path::cache_dir() {
-            let mut canon_cache_path = canonicalize_path(engine_state, path.as_ref());
+            let mut canon_cache_path = absolute_path(engine_state, path.as_ref());
             canon_cache_path.push("nushell");
             Value::string(canon_cache_path.to_string_lossy(), span)
         } else {
@@ -217,7 +217,7 @@ pub(crate) fn create_nu_constant(engine_state: &EngineState, span: Span) -> Valu
     );
 
     record.push("temp-dir", {
-        let canon_temp_path = canonicalize_path(engine_state, &std::env::temp_dir());
+        let canon_temp_path = absolute_path(engine_state, &std::env::temp_dir());
         Value::string(canon_temp_path.to_string_lossy(), span)
     });
 
