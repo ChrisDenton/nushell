@@ -51,6 +51,19 @@ fn expands_path_with_double_dot() {
 }
 
 #[test]
+fn expands_path_strict_without_existing() {
+    Playground::setup("path_expand_2", |dirs, _| {
+        let actual = nu!(cwd: dirs.test(), r#"
+            echo "menu/../menu/spam.txt"
+            | path expand -n -s
+        "#);
+
+        let expected = dirs.test.join("menu").join("spam.txt");
+        assert_eq!(Path::new(&actual.out), expected);
+    })
+}
+
+#[test]
 fn const_path_expand() {
     Playground::setup("const_path_expand", |dirs, sandbox| {
         sandbox.within("menu").with_files(&[EmptyFile("spam.txt")]);

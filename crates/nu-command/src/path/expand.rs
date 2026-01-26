@@ -1,13 +1,15 @@
 use super::PathSubcommandArguments;
 use nu_engine::command_prelude::*;
-use nu_path::{canonicalize_with, expand_path_with};
+#[cfg(not(windows))]
+use nu_path::dots::expand_dots;
+use nu_path::{absolute_with, canonicalize_with, expand_path_with};
 use nu_protocol::engine::StateWorkingSet;
 use std::path::Path;
 
 struct Arguments {
     strict: bool,
     cwd: String,
-    not_follow_symlink: bool,
+    follow_symlink: bool,
 }
 
 impl PathSubcommandArguments for Arguments {}
@@ -57,7 +59,7 @@ impl Command for PathExpand {
         let args = Arguments {
             strict: call.has_flag(engine_state, stack, "strict")?,
             cwd: engine_state.cwd_as_string(Some(stack))?,
-            not_follow_symlink: call.has_flag(engine_state, stack, "no-symlink")?,
+            follow_symlink: !call.has_flag(engine_state, stack, "no-symlink")?,
         };
         // This doesn't match explicit nulls
         if let PipelineData::Empty = input {
@@ -80,7 +82,7 @@ impl Command for PathExpand {
         let args = Arguments {
             strict: call.has_flag_const(working_set, "strict")?,
             cwd: working_set.permanent_state.cwd_as_string(None)?,
-            not_follow_symlink: call.has_flag_const(working_set, "no-symlink")?,
+            follow_symlink: !call.has_flag_const(working_set, "no-symlink")?,
         };
         // This doesn't match explicit nulls
         if let PipelineData::Empty = input {
@@ -142,46 +144,40 @@ impl Command for PathExpand {
 }
 
 fn expand(path: &Path, span: Span, args: &Arguments) -> Value {
-    if args.strict {
-        match canonicalize_with(path, &args.cwd) {
-            Ok(p) => {
-                if args.not_follow_symlink {
-                    Value::string(
-                        expand_path_with(path, &args.cwd, true).to_string_lossy(),
-                        span,
-                    )
-                } else {
-                    Value::string(p.to_string_lossy(), span)
-                }
-            }
-            Err(_) => Value::error(
+    if args.follow_symlink {
+        // Attempt to follow symlinks.
+        if let Ok(p) = canonicalize_with(path, &args.cwd) {
+            return Value::string(p.to_string_lossy(), span);
+        } else if args.strict {
+            // Error if strict mode is enabled, otherwise fallthrough to not following symlinks.
+            return Value::error(
                 ShellError::GenericError {
                     error: "Could not expand path".into(),
                     msg: "could not be expanded (path might not exist, non-final \
-                            component is not a directory, or other cause)"
+                        component is not a directory, or other cause)"
                         .into(),
                     span: Some(span),
                     help: None,
                     inner: vec![],
                 },
                 span,
-            ),
+            );
         }
-    } else if args.not_follow_symlink {
-        Value::string(
-            expand_path_with(path, &args.cwd, true).to_string_lossy(),
-            span,
-        )
-    } else {
-        canonicalize_with(path, &args.cwd)
-            .map(|p| Value::string(p.to_string_lossy(), span))
-            .unwrap_or_else(|_| {
-                Value::string(
-                    expand_path_with(path, &args.cwd, true).to_string_lossy(),
-                    span,
-                )
-            })
     }
+
+    // Get the absolute path without following symlinks.
+    let path = if let Ok(path) = absolute_with(path, &args.cwd) {
+        // On Windows, absolute_with expands dots
+        // but on other platforms we need to do it manually.
+        #[cfg(not(windows))]
+        let path = expand_dots(path);
+        path
+    } else {
+        // absolute_with should not fail but if it does
+        // then fallback to the manual implementation.
+        expand_path_with(path, &args.cwd, true)
+    };
+    Value::string(path.to_string_lossy(), span)
 }
 
 #[cfg(test)]
